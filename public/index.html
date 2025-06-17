@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Three.js World Editor</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Toolbar with prefab and scene controls -->
+  <div id="toolbar">
+    <button id="addCube">Add Cube</button>
+    <button id="addSphere">Add Sphere</button>
+    <button id="deleteSelected">Delete</button>
+    <button id="undo">Undo</button>
+    <button id="redo">Redo</button>
+    <button id="saveScene">Save Scene</button>
+
+    <!-- File input is hidden, label acts as the visible button -->
+    <label id="loadSceneLabel">
+      Load Scene
+      <input type="file" id="loadScene" style="display: none;" accept=".json" />
+    </label>
+  </div>
+
+  <!-- Optional future palette area (e.g., asset browser) -->
+  <div id="palette"></div>
+
+  <!-- Optional canvas styling -->
+  <canvas id="three-canvas"></canvas>
+
+  <!-- path from /public to /src -->
+  <script type="module" src="../src/main.js"></script>
+</body>
+</html>
