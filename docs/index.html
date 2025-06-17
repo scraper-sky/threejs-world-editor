@@ -11,16 +11,22 @@
   <div id="toolbar">
     <button id="addCube">Add Cube</button>
     <button id="addSphere">Add Sphere</button>
+    <button id="addCylinder">Add Cylinder</button>
+    <button id="addTorus">Add Torus</button>
     <button id="deleteSelected">Delete</button>
     <button id="undo">Undo</button>
     <button id="redo">Redo</button>
     <button id="saveScene">Save Scene</button>
-
-    <!-- File input is hidden, label acts as the visible button -->
-    <label id="loadSceneLabel">
-      Load Scene
-      <input type="file" id="loadScene" style="display: none;" accept=".json" />
+    
+    <!-- File upload -->
+    <label for="uploadModel" style="cursor: pointer; display: inline-block;">
+      <span style="padding: 6px 12px; background: white; border: 1px solid #ccc; border-radius: 4px;">Upload Model</span>
+      <input type="file" id="uploadModel"
+       accept=".glb,.gltf,.obj,.mtl,.stl,.fbx" />
     </label>
+
+    <!-- Load scene -->
+    <input type="file" id="loadScene" style="display: none;" />
   </div>
 
   <!-- Optional future palette area (e.g., asset browser) -->

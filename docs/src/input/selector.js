@@ -1,66 +1,69 @@
-import * as THREE from 'https://esm.sh/three';
-//selection logic
+import * as THREE from 'https://esm.sh/three@0.160.0';
+import { Raycaster, Vector2 } from 'https://esm.sh/three@0.160.0';
 
 export function setupSelector(scene, camera, renderer, onSelect) {
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-  let selectedObject = null;
+  const raycaster = new Raycaster();
+  const mouse = new Vector2();
+  let selectedObjects = [];
 
-  function handleClick(event) { //convert mouse coordinates to NDC, builds selectable meshes from arrays of objects, raycasts only with SelectableMeshes
+  function getSelected() {
+    return selectedObjects.slice();
+  }
+
+  function onClick(event) {
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(scene.children, true).filter(i => i.object.userData.isSelectable);
 
-    const selectableMeshes = []; //create an array to store only the objects of .userData.isSelectable = true
-    //this way, we can avoid selecting helper objects like grids and axes while keeping the general performance high (only raycast relevant objects)
-    scene.traverse((child) => {
-    if (child.isMesh && child.userData.isSelectable) { //call onSelected(selected) or onSelect(null) accordingly
-        selectableMeshes.push(child);
-    }
-    }); 
+    if (intersects.length > 0) {
+      const rawClickedObject = intersects[0].object;
+      const shift = event.shiftKey;
 
-    const intersects = raycaster.intersectObjects(selectableMeshes, true); //raycast only against SelectableMeshes
+      const groupSelect = typeof getGroupSelectionFlag === 'function' && getGroupSelectionFlag();
+      const clickedObject = groupSelect ? getTopLevelParent(rawClickedObject) : rawClickedObject;
 
-    if (intersects.length > 0) { //check intersection with object
-      selectedObject = intersects[0].object; //store closest intersected object, then selects it
-      selectedObject.userData.isSelected = true; //metadata tag added to the object itself
-      if (onSelect) onSelect(selectedObject);
-      console.log('Selected:', selectedObject.name || selectedObject.uuid);
+      if (shift) {
+        const index = selectedObjects.indexOf(clickedObject);
+        if (index !== -1) {
+          clickedObject.userData.isSelected = false;
+          clickedObject.material?.color.set(0x00ff00);
+          selectedObjects.splice(index, 1);
+        } else {
+          clickedObject.userData.isSelected = true;
+          clickedObject.material?.color.set(0xff0000);
+          selectedObjects.push(clickedObject);
+        }
+      } else {
+        selectedObjects.forEach(obj => {
+          obj.userData.isSelected = false;
+          obj.material?.color.set(0x00ff00);
+        });
+        clickedObject.userData.isSelected = true;
+        clickedObject.material?.color.set(0xff0000);
+        selectedObjects = [clickedObject];
+      }
+
+      if (onSelect) onSelect(clickedObject, event);
     } else {
-      if (selectedObject) selectedObject.userData.isSelected = false; //deselect logic, if selected before --> deselect
-      selectedObject = null; //clear selectedObject variable
-      if (onSelect) onSelect(null); 
-      console.log('Selection cleared');
+      selectedObjects.forEach(obj => {
+        obj.userData.isSelected = false;
+        obj.material?.color.set(0x00ff00);
+      });
+      selectedObjects = [];
+      if (onSelect) onSelect(null, event);
     }
   }
 
-  let pointerDown = null;
-  //we add logic here to detect true clicks vs accidental drags based on mouse movement
-
-    renderer.domElement.addEventListener('pointerdown', (e) => {
-        pointerDown = { x: e.clientX, y: e.clientY };
-    });
-
-    renderer.domElement.addEventListener('pointerup', (e) => {
-        const dx = Math.abs(e.clientX - pointerDown.x);
-        const dy = Math.abs(e.clientY - pointerDown.y);
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-    if (distance < 2) {
-    // Count it as a true click
-        handleClick(e);
+  function getTopLevelParent(obj) {
+    while (obj.parent && obj.parent.type !== 'Scene') {
+      obj = obj.parent;
     }
+    return obj;
+  }
 
-    pointerDown = null;
-});
-
-  return {
-    getSelected: () => selectedObject,
-    clearSelection: () => {
-      if (selectedObject) selectedObject.userData.isSelected = false;
-      selectedObject = null;
-    }
-  };
+  renderer.domElement.addEventListener('click', onClick);
+  return { getSelected };
 }

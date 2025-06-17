@@ -1,188 +1,310 @@
-import * as THREE from 'https://esm.sh/three';
-import { TransformControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/TransformControls.js';
-import { setupScene } from './scene/sceneManager.js';
-import { setupSelector } from './input/selector.js';
-import { createCube, createSphere } from './objects/prefabs.js';
+import * as THREE from 'https://esm.sh/three@0.160.0';
+import { Box3Helper }   from 'https://esm.sh/three@0.160.0';
+import { TransformControls }  from 'https://esm.sh/three@0.160.0/examples/jsm/controls/TransformControls.js';
+import { OBJLoader }          from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
+import { GLTFLoader }         from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+import { SelectionBox }       from 'https://esm.sh/three@0.160.0/examples/jsm/interactive/SelectionBox.js';
+import { SelectionHelper }    from 'https://esm.sh/three@0.160.0/examples/jsm/interactive/SelectionHelper.js';
+import { setupScene }     from './scene/sceneManager.js';
+import { setupSelector }  from './input/selector.js';
+import { createCube, createSphere, createCylinder, createTorus } from './objects/prefabs.js';
 import { HistoryManager } from './utils/history.js';
 import { saveScene, loadScene } from './utils/saveLoad.js';
-import { setupPalette } from './ui/palette.js';
+import { setupPalette }   from './ui/palette.js';
 
+// ─── Scene & Renderer Setup ─────────────────────────────────────────────────
+const { scene, camera, renderer, controls, grid } = setupScene();
+const history    = new HistoryManager();
+const gltfLoader = new GLTFLoader();
+const objLoader  = new OBJLoader();
 
-/* Setup */
-const { scene, camera, renderer, controls } = setupScene();
-const history = new HistoryManager();
-
+// ─── TransformControls & Undo Logic ──────────────────────────────────────────
 const transformControls = new TransformControls(camera, renderer.domElement);
 scene.add(transformControls);
+transformControls.addEventListener('dragging-changed', e => controls.enabled = !e.value);
 
-// Disable orbit controls while transforming
-transformControls.addEventListener('dragging-changed', (event) => {
-  controls.enabled = !event.value;
-});
-
-// Track transform for undo
 let transformSnapshot = null;
-
+let _boxHelper = null; // will hold our 3D bounding‐box helper
 transformControls.addEventListener('mouseDown', () => {
-  const obj = transformControls.object;
-  if (!obj) return;
-
+  const o = transformControls.object;
+  if (!o) return;
   transformSnapshot = {
-    object: obj,
-    position: obj.position.clone(),
-    rotation: obj.rotation.clone(),
-    scale: obj.scale.clone()
+    object:  o,
+    position:o.position.clone(),
+    rotation:o.rotation.clone(),
+    scale:   o.scale.clone()
   };
 });
-
 transformControls.addEventListener('mouseUp', () => {
-  const obj = transformControls.object;
-  if (!obj || !transformSnapshot) return;
+  const o = transformControls.object;
+  if (!o || !transformSnapshot) return;
 
-  const { position: beforePos, rotation: beforeRot, scale: beforeScale } = transformSnapshot;
+  const { position: bP, rotation: bR, scale: bS } = transformSnapshot;
+  const aP = o.position.clone(), aR = o.rotation.clone(), aS = o.scale.clone();
 
-  const afterPos = obj.position.clone();
-  const afterRot = obj.rotation.clone();
-  const afterScale = obj.scale.clone();
-
-  const changed =
-    !beforePos.equals(afterPos) ||
-    !beforeRot.equals(afterRot) ||
-    !beforeScale.equals(afterScale);
-
-  if (!changed) return;
-
-  // Push transformation to undo stack
-  history.execute(
-    () => {
-      obj.position.copy(afterPos);
-      obj.rotation.copy(afterRot);
-      obj.scale.copy(afterScale);
-    },
-    () => {
-      obj.position.copy(beforePos);
-      obj.rotation.copy(beforeRot);
-      obj.scale.copy(beforeScale);
-    }
-  );
-
+  if (!bP.equals(aP) || !bR.equals(aR) || !bS.equals(aS)) {
+    history.execute(
+      () => { o.position.copy(aP); o.rotation.copy(aR); o.scale.copy(aS); },
+      () => { o.position.copy(bP); o.rotation.copy(bR); o.scale.copy(bS); }
+    );
+  }
   transformSnapshot = null;
 });
 
-// Keyboard shortcuts to switch transform modes
-window.addEventListener('keydown', (event) => {
-  switch (event.key) {
-    case 'g':
-      transformControls.setMode('translate');
-      break;
-    case 'r':
-      transformControls.setMode('rotate');
-      break;
-    case 's':
-      transformControls.setMode('scale');
-      break;
-  }
-});
+// ─── Selection Data Structures ────────────────────────────────────────────────
+const selectedGroup   = new THREE.Group();
+selectedGroup.position.set(0,0,0);
+selectedGroup.rotation.set(0,0,0);
+selectedGroup.scale.set(1,1,1);
+scene.add(selectedGroup);
 
-setupPalette('palette', spawnObject);
+let currentSelected = [];
 
-/* Selection logic */
-let lastSelected = null;
+// ─── Helper Functions ─────────────────────────────────────────────────────────
 
-function handleSelection(selected) {
-  if (lastSelected && lastSelected !== selected) {
-    lastSelected.material.color.set(0x00ff00);
-    lastSelected.userData.isSelected = false;
-    transformControls.detach();
-  }
-
-  if (selected) {
-    selected.material.color.set(0xff0000);
-    selected.userData.isSelected = true;
-    transformControls.attach(selected);
-    lastSelected = selected;
-  } else {
-    transformControls.detach();
-    lastSelected = null;
-  }
-}
-
-const selector = setupSelector(scene, camera, renderer, handleSelection);
-
-/* Utility to add object with undo support */
-function spawnObject(mesh) {
-  mesh.position.set(0, 0.5, 0);
-  history.execute(
-    () => scene.add(mesh),
-    () => scene.remove(mesh)
-  );
-  selector.clearSelection();
+/** Clear any selection, reattach children to scene root */
+function clearSelection() {
+  currentSelected.forEach(o => {
+    o.userData.isSelected = false;
+    o.material?.color.set(0x00ff00);
+    scene.attach(o);
+  });
+  selectedGroup.clear();
+  currentSelected = [];
   transformControls.detach();
 }
 
-/* UI Buttons */
-document.getElementById('addCube').addEventListener('click', () => {
-  spawnObject(createCube());
-});
+/** Handle single-click or shift-click on one mesh */
+function handleSelection(clicked, event) {
+  const shift = event?.shiftKey;
 
-document.getElementById('addSphere').addEventListener('click', () => {
-  spawnObject(createSphere());
-});
+  // empty click → clear
+  if (!clicked) { clearSelection(); return; }
 
-document.getElementById('deleteSelected').addEventListener('click', () => {
-  const selected = selector.getSelected();
-  if (!selected) return;
-
-  history.execute(
-    () => {
-      scene.remove(selected);
-      selector.clearSelection();
-      transformControls.detach();
-    },
-    () => {
-      scene.add(selected);
+  if (shift) {
+    const idx = currentSelected.indexOf(clicked);
+    if (idx !== -1) {
+      // deselect
+      clicked.userData.isSelected = false;
+      clicked.material.color.set(0x00ff00);
+      selectedGroup.remove(clicked);
+      currentSelected.splice(idx,1);
+    } else {
+      // add
+      clicked.userData.isSelected = true;
+      clicked.material.color.set(0xff0000);
+      selectedGroup.add(clicked);
+      currentSelected.push(clicked);
     }
+  } else {
+    // single-click: clear then add
+    clearSelection();
+    clicked.userData.isSelected = true;
+    clicked.material.color.set(0xff0000);
+    selectedGroup.add(clicked);
+    currentSelected = [clicked];
+  }
+
+  // attach TransformControls
+  if (currentSelected.length === 1) {
+    transformControls.attach(currentSelected[0]);
+  } else if (currentSelected.length > 1) {
+    transformControls.attach(selectedGroup);
+  } else {
+    transformControls.detach();
+  }
+}
+
+/**
+ * handleBoxSelection( hits )
+ *  • groups + colours all hits
+ *  • draws a 3D Box3Helper around the group
+ *  • attaches the TransformControls
+ */
+function handleBoxSelection( hits ) {
+  // 1) clear prior selection & remove old helper
+  clearSelection();
+  if (_boxHelper) {
+    scene.remove(_boxHelper);
+    _boxHelper = null;
+  }
+
+  // 2) nothing to do if empty
+  if (hits.length === 0) return;
+
+  // 3) colour + group
+  hits.forEach(obj => {
+    obj.userData.isSelected = true;
+    obj.material.color.set(0xff0000);
+    selectedGroup.add(obj);
+    currentSelected.push(obj);
+  });
+
+  // 4) build and render the 3D bounding box
+  const box3 = new THREE.Box3().setFromObject(selectedGroup);
+  _boxHelper = new Box3Helper(box3, 0xffff00);
+  scene.add(_boxHelper);
+
+  // 5) attach transform gizmo
+  if (currentSelected.length === 1) {
+    transformControls.attach(currentSelected[0]);
+  } else {
+    transformControls.attach(selectedGroup);
+  }
+}
+
+
+/** Common init for imported GLTF/OBJ roots */
+function initImported(root) {
+  root.position.set(0, 0.5, 0);
+  root.traverse(c => {
+    if (c.isMesh) {
+      c.userData.isSelectable = true;
+      c.userData._root        = root;
+    }
+  });
+  root.userData.isSelectable = true;
+  root.userData._root        = root;
+  scene.add(root);
+}
+
+/** Mark existing meshes selectable */
+function markMeshesSelectable(obj) {
+  obj.traverse(c => { if (c.isMesh) c.userData.isSelectable = true; });
+}
+
+// ─── Mouse‐drag Marquee Setup ─────────────────────────────────────────────────
+const selectionBox    = new SelectionBox(camera, scene);
+const selectionHelper = new SelectionHelper(renderer, 'selectBox');
+let isDragging = false;
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (!e.ctrlKey) return;
+  isDragging = true; // only begin marquee if Ctrl is held
+  controls.enabled = false;  // freeze the camera during marquee
+  const r = renderer.domElement.getBoundingClientRect();
+  selectionBox.startPoint.set(
+    ((e.clientX - r.left)/r.width)*2 -1,
+    -((e.clientY - r.top)/r.height)*2 +1,
+     0.5
   );
 });
 
-document.getElementById('undo').addEventListener('click', () => {
-  history.undo();
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!isDragging) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  selectionBox.endPoint.set(
+    ((e.clientX - r.left)/r.width)*2 -1,
+    -((e.clientY - r.top)/r.height)*2 +1,
+     0.5
+  );
 });
 
-document.getElementById('redo').addEventListener('click', () => {
-  history.redo();
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!isDragging) return;
+  isDragging = false;
+  controls.enabled = true;
+  let hits = selectionBox.select().filter(o => o.userData.isSelectable);
+  // hide the 2D overlay
+  selectionHelper.cancel();
+  // hand off to our 3D‐aware box‐selection routine
+  handleBoxSelection(hits);
 });
 
-document.getElementById('saveScene').addEventListener('click', () => {
-  saveScene(scene);
+// ─── Click / Shift‐Click Setup ───────────────────────────────────────────────
+const selector = setupSelector(scene, camera, renderer, handleSelection);
+
+// ─── Prefab & Palette Setup ──────────────────────────────────────────────────
+function spawnObject(mesh) {
+  mesh.position.set(0,0.5,0);
+  history.execute(() => scene.add(mesh), () => scene.remove(mesh));
+  clearSelection();
+}
+setupPalette('palette', spawnObject);
+
+// ─── UI Button Bindings ──────────────────────────────────────────────────────
+document.getElementById('addCube')   .addEventListener('click', () => spawnObject(createCube()));
+document.getElementById('addSphere') .addEventListener('click', () => spawnObject(createSphere()));
+document.getElementById('addCylinder').addEventListener('click', () => spawnObject(createCylinder()));
+document.getElementById('addTorus')  .addEventListener('click', () => spawnObject(createTorus()));
+
+document.getElementById('deleteSelected').addEventListener('click', () => {
+  if (!currentSelected.length) return;
+  history.execute(
+    () => { currentSelected.forEach(o=>scene.remove(o)); clearSelection(); },
+    () => { currentSelected.forEach(o=>scene.add(o)); }
+  );
 });
 
-document.getElementById('loadScene').addEventListener('change', (e) => {
+document.getElementById('undo')      .addEventListener('click', () => history.undo());
+document.getElementById('redo')      .addEventListener('click', () => history.redo());
+document.getElementById('saveScene').addEventListener('click', () => saveScene(scene));
+document.getElementById('loadScene').addEventListener('change', e => {
   const file = e.target.files[0];
+  if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
     const json = JSON.parse(reader.result);
-
-    // Clear current scene first (excluding camera, light, grid, etc.)
-    [...scene.children].forEach((c) => {
-      if (c.isMesh) scene.remove(c);
-    });
-
-    loadScene(scene, json, (mesh) => {
-      mesh.userData.isSelectable = true;
-    });
-
-    selector.clearSelection();
-    transformControls.detach();
-    history.undoStack = [];
-    history.redoStack = [];
+    [...scene.children].forEach(c => c.isMesh && scene.remove(c));
+    loadScene(scene, json, m=>m.userData.isSelectable=true);
+    clearSelection();
+    history.undoStack = []; history.redoStack = [];
   };
-  if (file) reader.readAsText(file);
+  reader.readAsText(file);
 });
 
-/* Animation loop */
+// ─── Upload Model Handler ────────────────────────────────────────────────────
+document.getElementById('uploadModel').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const isGLB = /\.glb$/i.test(file.name);
+  const isOBJ = /\.obj$/i.test(file.name);
+  const reader = new FileReader();
+
+  reader.onload = evt => {
+    if (isGLB) {
+      gltfLoader.parse(evt.target.result, '', g=>initImported(g.scene), console.error);
+    } else if (isOBJ) {
+      const root = objLoader.parse(evt.target.result);
+      initImported(root);
+    } else {
+      console.warn('Unsupported file:', file.name);
+    }
+  };
+
+  if (isGLB) reader.readAsArrayBuffer(file);
+  else        reader.readAsText(file);
+});
+
+// ─── Keyboard Shortcuts ─────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (e.key === 'g') transformControls.setMode('translate');
+  if (e.key === 'r') transformControls.setMode('rotate');
+  if (e.key === 's') transformControls.setMode('scale');
+  if ( e.key === 'Escape' ) {
+    clearSelection();
+    if ( _boxHelper ) {
+      scene.remove( _boxHelper );
+      _boxHelper = null;
+    }
+    selectionHelper.cancel();
+    controls.enabled = true;
+  }
+});
+
+// ─── Animation Loop ─────────────────────────────────────────────────────────
 function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
+  try {
+    requestAnimationFrame(animate);
+    grid.position.x = camera.position.x;
+    grid.position.z = camera.position.z;
+    controls.update();
+    renderer.render(scene, camera);
+  } catch (error) {
+    console.error('Error in animation loop:', error);
+  }
 }
+
+// Start the animation loop
+console.log('Starting animation loop...');
 animate();

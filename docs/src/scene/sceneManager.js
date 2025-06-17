@@ -1,42 +1,50 @@
-import * as THREE from 'https://esm.sh/three';
-import { OrbitControls } from 'https://esm.sh/three/examples/jsm/controls/OrbitControls.js';
-//scene graph root, we create the camera and the renderer, set up visual helpers and add lighting/orbit controls, handle response resizing
+import * as THREE from 'https://esm.sh/three@0.160.0';
+import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 
 export function setupScene() {
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x222222);
 
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
   camera.position.set(5, 5, 5);
+  camera.lookAt(0, 0, 0);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const canvas = document.getElementById('three-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+  renderer.setPixelRatio(window.devicePixelRatio);
 
-  // we add orbit controls here 
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 1, 0);
-  controls.update();
+  controls.enableDamping = true;
 
-  // helpers to add gridHelper and axesHelper
-  const gridHelper = new THREE.GridHelper(20, 20);
-  const axesHelper = new THREE.AxesHelper(5);
-  scene.add(gridHelper);
-  scene.add(axesHelper);
+  // create a large grid, we'll recenter it each frame
+  const gridSize = 1000;
+  const gridDivs = 200;
+  const grid = new THREE.GridHelper(gridSize, gridDivs, 0xffffff, 0xffffff);
+  grid.material.depthWrite = false;  // so it’s always visible
+  grid.material.opacity    = 0.6;
+  grid.material.transparent= true;
+  scene.add(grid);
 
-  // this handles lighting
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(5, 10, 5);
-  scene.add(dirLight);
+  // lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+  const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+  directional.position.set(5, 10, 5);
+  scene.add(directional);
 
-  // this handles window resizing 
+  // handle resize
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  //+OrbitControls, Grid, Axes, Lighting, Resizing ... 
-
-  return { scene, camera, renderer, controls }; //we return scene, camera, and renderer for use in main.js
+  // wrap up by returning everything plus our grid so we can update it
+  return { scene, camera, renderer, controls, grid };
 }
