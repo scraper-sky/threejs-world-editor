@@ -1,4 +1,4 @@
-import * as THREE from 'https://esm.sh/three@0.160.0';
+import * as THREE from 'https://esm.sh/three';
 //redundant because we already have TransformControls set up in main.js, but this is an optional lightweight dragging alternative if necessary
 
 export function setupSimpleDrag(scene, camera, renderer, selector) {

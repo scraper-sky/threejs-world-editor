@@ -1,5 +1,5 @@
-import * as THREE from 'https://esm.sh/three@0.160.0';
-import { Raycaster, Vector2 } from 'https://esm.sh/three@0.160.0';
+import * as THREE from 'https://esm.sh/three';
+import { Raycaster, Vector2 } from 'https://esm.sh/three';
 
 export function setupSelector(scene, camera, renderer, onSelect) {
   const raycaster = new Raycaster();

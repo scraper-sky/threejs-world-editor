@@ -1,4 +1,5 @@
-import * as THREE from 'https://esm.sh/three@0.160.0';
+import * as THREE from 'https://esm.sh/three';
+
 
 export function createCube({ size = 1, color = 0x00ff00, name = 'Cube' } = {}) {
   const geometry = new THREE.BoxGeometry(size, size, size);

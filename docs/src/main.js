@@ -1,5 +1,5 @@
+// ─── Imports (all from the same three@0.160.0 package) ──────────────────────
 import * as THREE from 'https://esm.sh/three@0.160.0';
-import { Box3Helper }   from 'https://esm.sh/three@0.160.0';
 import { TransformControls }  from 'https://esm.sh/three@0.160.0/examples/jsm/controls/TransformControls.js';
 import { OBJLoader }          from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
 import { GLTFLoader }         from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
@@ -118,38 +118,33 @@ function handleSelection(clicked, event) {
 /**
  * handleBoxSelection( hits )
  *  • groups + colours all hits
- *  • draws a 3D Box3Helper around the group
+ *  • draws a 3D BoxHelper around the group
  *  • attaches the TransformControls
  */
 function handleBoxSelection( hits ) {
-  // 1) clear prior selection & remove old helper
   clearSelection();
-  if (_boxHelper) {
-    scene.remove(_boxHelper);
+  if ( _boxHelper ) {
+    scene.remove( _boxHelper );
     _boxHelper = null;
   }
 
-  // 2) nothing to do if empty
-  if (hits.length === 0) return;
+  if ( hits.length === 0 ) return;
 
-  // 3) colour + group
-  hits.forEach(obj => {
+  hits.forEach( obj => {
     obj.userData.isSelected = true;
-    obj.material.color.set(0xff0000);
-    selectedGroup.add(obj);
-    currentSelected.push(obj);
+    obj.material.color.set( 0xff0000 );
+    selectedGroup.add( obj );
+    currentSelected.push( obj );
   });
 
-  // 4) build and render the 3D bounding box
-  const box3 = new THREE.Box3().setFromObject(selectedGroup);
-  _boxHelper = new Box3Helper(box3, 0xffff00);
-  scene.add(_boxHelper);
+  // ← here’s the THREE.BoxHelper from core:
+  _boxHelper = new THREE.BoxHelper( selectedGroup, 0xffff00 );
+  scene.add( _boxHelper );
 
-  // 5) attach transform gizmo
-  if (currentSelected.length === 1) {
-    transformControls.attach(currentSelected[0]);
+  if ( currentSelected.length === 1 ) {
+    transformControls.attach( currentSelected[0] );
   } else {
-    transformControls.attach(selectedGroup);
+    transformControls.attach( selectedGroup );
   }
 }
 
@@ -175,18 +170,24 @@ function markMeshesSelectable(obj) {
 
 // ─── Mouse‐drag Marquee Setup ─────────────────────────────────────────────────
 const selectionBox    = new SelectionBox(camera, scene);
-const selectionHelper = new SelectionHelper(renderer, 'selectBox');
+const selectionHelper = new SelectionHelper(renderer, 'selectBox' );
+selectionHelper.enabled = false;
+
 let isDragging = false;
 
 renderer.domElement.addEventListener('pointerdown', e => {
-  if (!e.ctrlKey) return;
-  isDragging = true; // only begin marquee if Ctrl is held
-  controls.enabled = false;  // freeze the camera during marquee
+  // check Ctrl (or Cmd on Mac)
+  const marqueeMode = e.ctrlKey || e.metaKey;
+  controls.enabled      = !marqueeMode;      // freeze camera if marquee
+  selectionHelper.enabled = marqueeMode;      // only show overlay if marquee
+  if (!marqueeMode) return;
+
+  isDragging = true;
   const r = renderer.domElement.getBoundingClientRect();
   selectionBox.startPoint.set(
-    ((e.clientX - r.left)/r.width)*2 -1,
-    -((e.clientY - r.top)/r.height)*2 +1,
-     0.5
+    ((e.clientX - r.left)/r.width ) * 2 - 1,
+    -((e.clientY - r.top)/r.height) * 2 + 1,
+    0.5
   );
 });
 
@@ -203,12 +204,12 @@ renderer.domElement.addEventListener('pointermove', e => {
 renderer.domElement.addEventListener('pointerup', e => {
   if (!isDragging) return;
   isDragging = false;
-  controls.enabled = true;
-  let hits = selectionBox.select().filter(o => o.userData.isSelectable);
-  // hide the 2D overlay
-  selectionHelper.cancel();
-  // hand off to our 3D‐aware box‐selection routine
-  handleBoxSelection(hits);
+  controls.enabled      = true;   // re-enable camera
+  selectionHelper.enabled = false; // hide overlay
+  selectionHelper._onSelectOver();
+  // get all 3D hits
+  const hits = selectionBox.select().filter(o => o.userData.isSelectable);
+  handleBoxSelection(hits);      // your 3D box logic
 });
 
 // ─── Click / Shift‐Click Setup ───────────────────────────────────────────────
