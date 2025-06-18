@@ -4,7 +4,6 @@ import { TransformControls }  from 'https://esm.sh/three@0.160.0/examples/jsm/co
 import { OBJLoader }          from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
 import { GLTFLoader }         from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 import { SelectionBox }       from 'https://esm.sh/three@0.160.0/examples/jsm/interactive/SelectionBox.js';
-import { SelectionHelper }    from 'https://esm.sh/three@0.160.0/examples/jsm/interactive/SelectionHelper.js';
 import { setupScene }     from './scene/sceneManager.js';
 import { setupSelector }  from './input/selector.js';
 import { createCube, createSphere, createCylinder, createTorus } from './objects/prefabs.js';
@@ -22,6 +21,14 @@ const objLoader  = new OBJLoader();
 const transformControls = new TransformControls(camera, renderer.domElement);
 scene.add(transformControls);
 transformControls.addEventListener('dragging-changed', e => controls.enabled = !e.value);
+
+transformControls.addEventListener('objectChange', () => {
+  if (_boxHelper) {
+    // redraw the box whenever the group moves
+    selectedGroup.updateMatrixWorld(true);
+    _boxHelper.update();
+  }
+});
 
 let transformSnapshot = null;
 let _boxHelper = null; // will hold our 3D bounding‐box helper
@@ -44,8 +51,8 @@ transformControls.addEventListener('mouseUp', () => {
 
   if (!bP.equals(aP) || !bR.equals(aR) || !bS.equals(aS)) {
     history.execute(
-      () => { o.position.copy(aP); o.rotation.copy(aR); o.scale.copy(aS); },
-      () => { o.position.copy(bP); o.rotation.copy(bR); o.scale.copy(bS); }
+      () => { o.position.copy(aP); o.rotation.copy(aR); o.scale.copy(aS); updateBoundingBox();},
+      () => { o.position.copy(bP); o.rotation.copy(bR); o.scale.copy(bS); updateBoundingBox();}
     );
   }
   transformSnapshot = null;
@@ -121,32 +128,42 @@ function handleSelection(clicked, event) {
  *  • draws a 3D BoxHelper around the group
  *  • attaches the TransformControls
  */
-function handleBoxSelection( hits ) {
+// ─── Updated handleBoxSelection ─────────────────────────────────────────────
+function handleBoxSelection(hits) {
   clearSelection();
-  if ( _boxHelper ) {
-    scene.remove( _boxHelper );
+  if (_boxHelper) {
+    scene.remove(_boxHelper);
     _boxHelper = null;
   }
+  if (hits.length === 0) return;
 
-  if ( hits.length === 0 ) return;
+  // 1) compute bounds & center
+  const tmpBox = new THREE.Box3();
+  hits.forEach(o => tmpBox.expandByObject(o));
+  const center = tmpBox.getCenter(new THREE.Vector3());
 
-  hits.forEach( obj => {
+  // 2) reposition your group to that center
+  selectedGroup.position.copy(center);
+
+  // 3) reparent meshes *relative* to that center
+  hits.forEach(obj => {
     obj.userData.isSelected = true;
-    obj.material.color.set( 0xff0000 );
-    selectedGroup.add( obj );
-    currentSelected.push( obj );
+    obj.material.color.set(0xff0000);
+    // convert world→local
+    obj.position.sub(center);
+    selectedGroup.add(obj);
+    currentSelected.push(obj);
   });
 
-  // ← here’s the THREE.BoxHelper from core:
-  _boxHelper = new THREE.BoxHelper( selectedGroup, 0xffff00 );
-  scene.add( _boxHelper );
+  // 4) draw your BoxHelper around the *group*
+  selectedGroup.updateMatrixWorld(true);
+  _boxHelper = new THREE.BoxHelper(selectedGroup, 0xffff00);
+  scene.add(_boxHelper);
 
-  if ( currentSelected.length === 1 ) {
-    transformControls.attach( currentSelected[0] );
-  } else {
-    transformControls.attach( selectedGroup );
-  }
+  // 5) attach the gizmo to the group
+  transformControls.attach(selectedGroup);
 }
+
 
 
 /** Common init for imported GLTF/OBJ roots */
@@ -169,47 +186,79 @@ function markMeshesSelectable(obj) {
 }
 
 // ─── Mouse‐drag Marquee Setup ─────────────────────────────────────────────────
-const selectionBox    = new SelectionBox(camera, scene);
-const selectionHelper = new SelectionHelper(renderer, 'selectBox' );
-selectionHelper.enabled = false;
-
+const selectionBox = new SelectionBox(camera, scene);
 let isDragging = false;
 
+const marqueeEl = document.getElementById('selectBox');
+let startPoint = new THREE.Vector2();
+
+// on pointerdown: only enter marquee mode if Ctrl/Cmd
 renderer.domElement.addEventListener('pointerdown', e => {
-  // check Ctrl (or Cmd on Mac)
   const marqueeMode = e.ctrlKey || e.metaKey;
-  controls.enabled      = !marqueeMode;      // freeze camera if marquee
-  selectionHelper.enabled = marqueeMode;      // only show overlay if marquee
   if (!marqueeMode) return;
 
+  e.preventDefault();
+  controls.enabled = false;
   isDragging = true;
+
+  // record screen coords
   const r = renderer.domElement.getBoundingClientRect();
+  startPoint.set(e.clientX - r.left, e.clientY - r.top);
+
+  // position & show the <div>
+  marqueeEl.style.left   = `${startPoint.x}px`;
+  marqueeEl.style.top    = `${startPoint.y}px`;
+  marqueeEl.style.width  = `0px`;
+  marqueeEl.style.height = `0px`;
+  marqueeEl.style.display= 'block';
+
+  // tell the SelectionBox too
   selectionBox.startPoint.set(
-    ((e.clientX - r.left)/r.width ) * 2 - 1,
-    -((e.clientY - r.top)/r.height) * 2 + 1,
+    (startPoint.x/r.width)*2 -1,
+    -(startPoint.y/r.height)*2 +1,
     0.5
   );
 });
 
 renderer.domElement.addEventListener('pointermove', e => {
   if (!isDragging) return;
+  e.preventDefault();
+
   const r = renderer.domElement.getBoundingClientRect();
+  const currentX = e.clientX - r.left;
+  const currentY = e.clientY - r.top;
+
+  // update <div> dims
+  const x = Math.min(currentX, startPoint.x),
+        y = Math.min(currentY, startPoint.y),
+        w = Math.abs(currentX - startPoint.x),
+        h = Math.abs(currentY - startPoint.y);
+
+  marqueeEl.style.left   = `${x}px`;
+  marqueeEl.style.top    = `${y}px`;
+  marqueeEl.style.width  = `${w}px`;
+  marqueeEl.style.height = `${h}px`;
+
+  // update SelectionBox endPoint
   selectionBox.endPoint.set(
-    ((e.clientX - r.left)/r.width)*2 -1,
-    -((e.clientY - r.top)/r.height)*2 +1,
-     0.5
+    (currentX/r.width)*2 -1,
+    -(currentY/r.height)*2 +1,
+    0.5
   );
 });
 
 renderer.domElement.addEventListener('pointerup', e => {
   if (!isDragging) return;
+  e.preventDefault();
+
   isDragging = false;
-  controls.enabled      = true;   // re-enable camera
-  selectionHelper.enabled = false; // hide overlay
-  selectionHelper._onSelectOver();
-  // get all 3D hits
-  const hits = selectionBox.select().filter(o => o.userData.isSelectable);
-  handleBoxSelection(hits);      // your 3D box logic
+  controls.enabled = true;
+  marqueeEl.style.display = 'none';
+
+  // do the 3D selection
+  const hits = selectionBox.select()
+    .filter(o => o.userData.isSelectable);
+  handleBoxSelection(hits);
 });
 
 // ─── Click / Shift‐Click Setup ───────────────────────────────────────────────
@@ -288,7 +337,6 @@ window.addEventListener('keydown', e => {
       scene.remove( _boxHelper );
       _boxHelper = null;
     }
-    selectionHelper.cancel();
     controls.enabled = true;
   }
 });

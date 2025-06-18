@@ -46,8 +46,9 @@ canvas {
 }
 
 .selectBox {
+  border: 2px dashed #55aaff;
+  background: rgba(75,160,255,0.2);
   position: absolute;
-  border: 1px dashed white;
   pointer-events: none;
-  box-sizing: border-box;
+  z-index: 20;
 }
