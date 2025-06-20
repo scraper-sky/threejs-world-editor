@@ -17,6 +17,7 @@ const history    = new HistoryManager();
 const gltfLoader = new GLTFLoader();
 const objLoader  = new OBJLoader();
 const uploadedAssets = [];
+const assetCounts    = {};
 
 // ─── TransformControls & Undo Logic ──────────────────────────────────────────
 const transformControls = new TransformControls(camera, renderer.domElement);
@@ -276,35 +277,36 @@ setupPalette('palette', spawnObject);
 /**
  * Create a button in the bottom asset-bar for this model
  */
-function addAssetBarButton(label, assetRoot) {
+function addAssetBarButton(filename, assetRoot) {
+  const label = filename.replace(/\..+$/, '');       // “deadtrees”
+  assetCounts[label] = 0;                            // init counter
+
   const bar = document.getElementById('asset-bar');
   const btn = document.createElement('button');
-  btn.textContent = label.replace(/\..+$/, ''); // strip extension
-  btn.addEventListener('click', () => spawnAssetFromUpload(assetRoot));
-  bar.appendChild(btn);
-}
+  btn.textContent = label;
+  btn.addEventListener('click', () => {
+    // bump the counter
+    assetCounts[label]++;
 
-/**
- * Clone the uploaded asset & drop it into the scene
- */
-function spawnAssetFromUpload(assetRoot) {
-  // deep clone the group
-  const clone = assetRoot.clone(true);
-  // re-enable interactivity on all meshes
-  clone.traverse(c => {
-    if (c.isMesh) {
-      c.userData.isSelectable = true;
-      // copy material/color state if desired
-    }
+    // deep‐clone the original imported group
+    const clone = assetRoot.clone(true);
+    clone.name = `${label}(${assetCounts[label]})`;  // “deadtrees(1)”, “deadtrees(2)”, …
+
+    // re‐enable selectability
+    clone.traverse(c => {
+      if (c.isMesh) c.userData.isSelectable = true;
+    });
+
+    // position & add via history
+    clone.position.set(0, 0.5, 0);
+    history.execute(
+      () => scene.add(clone),
+      () => scene.remove(clone)
+    );
+    clearSelection();
   });
-  // position it at origin
-  clone.position.set(0, 0.5, 0);
-  // add via your undo/history system
-  history.execute(
-    () => scene.add(clone),
-    () => scene.remove(clone)
-  );
-  clearSelection();
+
+  bar.appendChild(btn);
 }
 
 // ─── UI Button Bindings ──────────────────────────────────────────────────────
@@ -342,40 +344,30 @@ document.getElementById('loadScene').addEventListener('change', e => {
 document.getElementById('uploadModel').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
-  const isGLB = /\.glb$/i.test(file.name);
-  const isOBJ = /\.obj$/i.test(file.name);
+
   const reader = new FileReader();
+  const name   = file.name;
 
   reader.onload = evt => {
-    if (isGLB) {
+    if (/\.glb$/i.test(name)) {
       gltfLoader.parse(evt.target.result, '', gltf => {
         const root = gltf.scene;
         initImported(root);
-
-        // ←— log right here
-        console.log('adding asset button for', file.name);
-
         uploadedAssets.push(root);
-        addAssetBarButton(file.name, root);
+        addAssetBarButton(name, root);
       }, console.error);
-    }
-    else if (isOBJ) {
+    } else if (/\.obj$/i.test(name)) {
       const root = objLoader.parse(evt.target.result);
       initImported(root);
-
-      // ←— and also here
-      console.log('adding asset button for', file.name);
-
       uploadedAssets.push(root);
-      addAssetBarButton(file.name, root);
-    }
-    else {
-      console.warn('Unsupported file:', file.name);
+      addAssetBarButton(name, root);
+    } else {
+      console.warn('Unsupported file:', name);
     }
   };
 
-  if (isGLB) reader.readAsArrayBuffer(file);
-  else        reader.readAsText(file);
+  if (/\.glb$/i.test(name)) reader.readAsArrayBuffer(file);
+  else                      reader.readAsText(file);
 });
 
 
