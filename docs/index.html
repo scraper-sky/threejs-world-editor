@@ -17,6 +17,17 @@
     <button id="undo">Undo</button>
     <button id="redo">Redo</button>
     <button id="saveScene">Save Scene</button>
+
+    <button id="saveScene">Save Scene</button>
+
+    <!-- Load scene -->
+    <label for="loadScene" style="cursor: pointer; display: inline-block;">
+      <span style="padding: 6px 12px; background: white; border: 1px solid #ccc; border-radius: 4px;">
+        Load Scene
+      </span>
+    </label>
+    <input type="file" id="loadScene" style="display: none;" accept=".json" />
+
     
     <!-- File upload -->
     <label for="uploadModel" style="cursor: pointer; display: inline-block;">
@@ -25,8 +36,6 @@
        accept=".glb,.gltf,.obj,.mtl,.stl,.fbx" />
     </label>
 
-    <!-- Load scene -->
-    <input type="file" id="loadScene" style="display: none;" />
   </div>
 
   <!-- Optional future palette area (e.g., asset browser) -->
