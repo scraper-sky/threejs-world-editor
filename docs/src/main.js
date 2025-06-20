@@ -348,16 +348,28 @@ document.getElementById('uploadModel').addEventListener('change', e => {
 
   reader.onload = evt => {
     if (isGLB) {
-      gltfLoader.parse(evt.target.result, '', gltf => { const root = gltf.scene; initImported(root);
-        uploadedAssets.push(root); addAssetBarButton(file.name, root); }, console.error);
-      uploadedAssets.push(root);
-      addAssetBarButton(file.name, root);
-    } else if (isOBJ) {
+      gltfLoader.parse(evt.target.result, '', gltf => {
+        const root = gltf.scene;
+        initImported(root);
+
+        // ←— log right here
+        console.log('adding asset button for', file.name);
+
+        uploadedAssets.push(root);
+        addAssetBarButton(file.name, root);
+      }, console.error);
+    }
+    else if (isOBJ) {
       const root = objLoader.parse(evt.target.result);
       initImported(root);
+
+      // ←— and also here
+      console.log('adding asset button for', file.name);
+
       uploadedAssets.push(root);
       addAssetBarButton(file.name, root);
-    } else {
+    }
+    else {
       console.warn('Unsupported file:', file.name);
     }
   };
@@ -365,6 +377,8 @@ document.getElementById('uploadModel').addEventListener('change', e => {
   if (isGLB) reader.readAsArrayBuffer(file);
   else        reader.readAsText(file);
 });
+
+
 
 // ─── Keyboard Shortcuts ─────────────────────────────────────────────────────
 window.addEventListener('keydown', e => {
