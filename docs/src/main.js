@@ -348,7 +348,8 @@ document.getElementById('uploadModel').addEventListener('change', e => {
 
   reader.onload = evt => {
     if (isGLB) {
-      gltfLoader.parse(evt.target.result, '', g=>initImported(g.scene), console.error);
+      gltfLoader.parse(evt.target.result, '', gltf => { const root = gltf.scene; initImported(root);
+        uploadedAssets.push(root); addAssetBarButton(file.name, root); }, console.error);
       uploadedAssets.push(root);
       addAssetBarButton(file.name, root);
     } else if (isOBJ) {
