@@ -16,6 +16,7 @@ const { scene, camera, renderer, controls, grid } = setupScene();
 const history    = new HistoryManager();
 const gltfLoader = new GLTFLoader();
 const objLoader  = new OBJLoader();
+const uploadedAssets = [];
 
 // ─── TransformControls & Undo Logic ──────────────────────────────────────────
 const transformControls = new TransformControls(camera, renderer.domElement);
@@ -272,6 +273,40 @@ function spawnObject(mesh) {
 }
 setupPalette('palette', spawnObject);
 
+/**
+ * Create a button in the bottom asset-bar for this model
+ */
+function addAssetBarButton(label, assetRoot) {
+  const bar = document.getElementById('asset-bar');
+  const btn = document.createElement('button');
+  btn.textContent = label.replace(/\..+$/, ''); // strip extension
+  btn.addEventListener('click', () => spawnAssetFromUpload(assetRoot));
+  bar.appendChild(btn);
+}
+
+/**
+ * Clone the uploaded asset & drop it into the scene
+ */
+function spawnAssetFromUpload(assetRoot) {
+  // deep clone the group
+  const clone = assetRoot.clone(true);
+  // re-enable interactivity on all meshes
+  clone.traverse(c => {
+    if (c.isMesh) {
+      c.userData.isSelectable = true;
+      // copy material/color state if desired
+    }
+  });
+  // position it at origin
+  clone.position.set(0, 0.5, 0);
+  // add via your undo/history system
+  history.execute(
+    () => scene.add(clone),
+    () => scene.remove(clone)
+  );
+  clearSelection();
+}
+
 // ─── UI Button Bindings ──────────────────────────────────────────────────────
 document.getElementById('addCube')   .addEventListener('click', () => spawnObject(createCube()));
 document.getElementById('addSphere') .addEventListener('click', () => spawnObject(createSphere()));
@@ -314,9 +349,13 @@ document.getElementById('uploadModel').addEventListener('change', e => {
   reader.onload = evt => {
     if (isGLB) {
       gltfLoader.parse(evt.target.result, '', g=>initImported(g.scene), console.error);
+      uploadedAssets.push(root);
+      addAssetBarButton(file.name, root);
     } else if (isOBJ) {
       const root = objLoader.parse(evt.target.result);
       initImported(root);
+      uploadedAssets.push(root);
+      addAssetBarButton(file.name, root);
     } else {
       console.warn('Unsupported file:', file.name);
     }
