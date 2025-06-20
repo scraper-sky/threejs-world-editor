@@ -17,39 +17,32 @@
     <button id="undo">Undo</button>
     <button id="redo">Redo</button>
 
+    <!-- Static Save Scene button -->
     <button id="saveScene">Save Scene</button>
 
-    <!-- Load scene -->
-    <label for="loadScene" style="cursor: pointer; display: inline-block;">
-      <span style="padding: 6px 12px; background: white; border: 1px solid #ccc; border-radius: 4px;">
-        Load Scene
-      </span>
+    <!-- Static Load Scene button + hidden file input -->
+    <label for="loadScene" class="file-upload-label">
+      <span>Load Scene</span>
     </label>
     <input type="file" id="loadScene" style="display: none;" accept=".json" />
 
-    
-    <!-- File upload -->
-    <label for="uploadModel" style="cursor: pointer; display: inline-block;">
-      <span style="padding: 6px 12px; background: white; border: 1px solid #ccc; border-radius: 4px;">Upload Model</span>
-      <input type="file" id="uploadModel"
-       accept=".glb,.gltf,.obj,.mtl,.stl,.fbx" />
+    <!-- Model upload -->
+    <label for="uploadModel" class="file-upload-label">
+      <span>Upload Model</span>
     </label>
-
+    <input type="file" id="uploadModel" accept=".glb,.gltf,.obj,.mtl,.stl,.fbx" style="display:none" />
   </div>
 
-  <!-- Optional future palette area (e.g., asset browser) -->
+  <!-- Palette (for future asset browser, hidden by default) -->
   <div id="palette"></div>
 
+  <!-- Single marquee overlay box -->
   <div id="selectBox" class="selectBox" style="display:none;"></div>
 
-  <!-- Optional canvas styling -->
+  <!-- Your Three.js canvas -->
   <canvas id="three-canvas"></canvas>
 
-  <!-- path from /public to /src -->
+  <!-- only one entry point: your bundled editor logic -->
   <script type="module" src="./src/main.js"></script>
-
-  <div id="selectBox" class="selectBox" style="display:none;"></div>
-
-
 </body>
 </html>
